@@ -22,6 +22,7 @@ const standingsContainer = document.getElementById('standingsContainer');
 const sortByNameBtn = document.getElementById('sortByNameBtn');
 const sortByScoreBtn = document.getElementById('sortByScoreBtn');
 const sortByRatingBtn = document.getElementById('sortByRatingBtn');
+const downloadShortlistBtn = document.getElementById('downloadShortlistBtn');
 
 // Event Listeners
 addPlayersBtn.addEventListener('click', addPlayers);
@@ -32,6 +33,7 @@ resetTournamentBtn.addEventListener('click', resetTournament);
 sortByNameBtn.addEventListener('click', () => updateStandings('name'));
 sortByScoreBtn.addEventListener('click', () => updateStandings('score'));
 sortByRatingBtn.addEventListener('click', () => updateStandings('rating'));
+if (downloadShortlistBtn) downloadShortlistBtn.addEventListener('click', downloadShortlist);
 
 // Parse one line into { id, rating }. Supports "Name\t112" or "Name 112" or "Name".
 function parsePlayerLine(line) {
@@ -443,6 +445,57 @@ function updateStandings(sortBy = 'score') {
     `;
 
     standingsContainer.innerHTML = html;
+}
+
+// Download shortlist as Excel/CSV (player name + rating) for dashboard manager
+function downloadShortlist() {
+    let standings = tournament.getStandings('score');
+    const isKnockout = pairingSystem.value === 'knockout';
+    // Knockout: export only qualifying winners (active players), not eliminated
+    if (isKnockout) {
+        standings = standings.filter(p => !p.eliminated);
+    }
+    if (standings.length === 0) {
+        if (standingsContainer && standingsContainer.querySelector) {
+            const msg = standingsContainer.querySelector('.empty-message');
+            if (msg) msg.textContent = isKnockout ? 'No shortlisted players yet. Record results or add players.' : 'No players to download. Add players first.';
+        }
+        return;
+    }
+    const escapeCsv = (val) => {
+        const s = String(val ?? '');
+        if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+            return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+    };
+    const headers = ['Rank', 'Player Name', 'Rating', 'Score', 'Wins', 'Losses', 'Draws', 'Games'];
+    if (isKnockout) headers.push('Status');
+    const rows = [headers.join(',')];
+    standings.forEach((p, index) => {
+        const games = p.wins + p.losses + p.draws;
+        const rank = index + 1; // shortlist rank 1, 2, 3...
+        const row = [
+            rank,
+            escapeCsv(p.id),
+            p.rating,
+            p.score.toFixed(1),
+            p.wins,
+            p.losses,
+            p.draws,
+            games
+        ];
+        if (isKnockout) row.push('Active');
+        rows.push(row.join(','));
+    });
+    const csv = rows.join('\r\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chess_tournament_shortlist_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 // Update player count
